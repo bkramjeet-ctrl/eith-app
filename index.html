@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Eith</title>
+<meta name="description" content="Eith — a personal AI companion that remembers you.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%A8%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <span class="brand-icon">✨</span>
+      <span class="brand-name">Eith</span>
+    </div>
+    <div class="header-actions">
+      <button id="memoryBtn" class="icon-btn" title="What Eith remembers about you">
+        💭 <span id="memoryCount">0</span>
+      </button>
+      <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+    </div>
+  </div>
+  <div class="conversation-bar">
+    <button type="button" id="conversationSwitchBtn" class="conversation-switch-btn">
+      <span id="currentConversationTitle">New conversation</span>
+      <span class="chevron">▾</span>
+    </button>
+  </div>
+</header>
+
+<main class="chat-main">
+  <div id="chatLog" class="chat-log">
+    <p class="chat-empty-state" id="chatEmptyState">Say hi to Eith 👋</p>
+  </div>
+</main>
+
+<form id="composerForm" class="composer">
+  <button type="button" id="micBtn" class="mic-btn" aria-label="Speak your message" hidden>🎤</button>
+  <textarea id="composerInput" class="composer-input" placeholder="Message Eith…" rows="1" maxlength="4000"></textarea>
+  <button type="submit" id="sendBtn" class="send-btn" aria-label="Send">➤</button>
+</form>
+
+<!-- Settings Modal -->
+<div id="settingsModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-header">
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="close-btn" id="closeSettingsModal" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-hint">
+        Eith is powered by Google's Gemini API (free tier). You don't need to add anything here —
+        by default, requests go through this site's own server, which uses the owner's key
+        without ever exposing it to you or anyone else.
+      </p>
+      <label for="apiKeyInput">Your own Gemini API key (optional)</label>
+      <input type="password" id="apiKeyInput" placeholder="AIzaSy..." autocomplete="off">
+      <p class="field-hint">Only needed if you'd rather use your own free-tier quota instead of sharing this site's. Stored only in this browser — you'll need to re-enter it on any other device.</p>
+      <p id="apiKeyStatus" class="field-status"></p>
+
+      <label for="userNameInput">Your name (optional)</label>
+      <input type="text" id="userNameInput" placeholder="What should Eith call you?" maxlength="60">
+
+      <p class="field-hint" id="voiceSupportHint" hidden>🎤 Voice input isn't supported in this browser (no microphone recording access) — try a recent Chrome, Firefox, Edge, or Safari.</p>
+
+      <div class="modal-actions">
+        <button type="button" id="saveSettingsBtn" class="primary-btn">Save</button>
+      </div>
+
+      <hr class="modal-divider">
+
+      <button type="button" id="clearChatBtn" class="danger-btn">Clear this conversation's messages</button>
+      <p class="field-hint">Empties the current conversation on every device (its name resets too). Eith's memory of you is kept. To delete a whole conversation, use the conversation switcher at the top instead.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Conversations Modal -->
+<div id="conversationsModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="conversationsTitle">
+    <div class="modal-header">
+      <h2 id="conversationsTitle">Conversations</h2>
+      <button class="close-btn" id="closeConversationsModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <button type="button" id="newConversationBtn" class="primary-btn conversation-new-btn">+ New conversation</button>
+      <ul id="conversationList" class="conversation-list"></ul>
+      <p id="conversationsEmptyState" class="chat-empty-state" hidden>No conversations yet.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Memory Modal -->
+<div id="memoryModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="memoryTitle">
+    <div class="modal-header">
+      <h2 id="memoryTitle">What Eith remembers</h2>
+      <button class="close-btn" id="closeMemoryModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-hint">Eith picks these up automatically as you talk — nothing to fill in yourself.</p>
+      <ul id="memoryList" class="memory-list"></ul>
+      <p id="memoryEmptyState" class="chat-empty-state" hidden>Nothing yet — the more you chat, the more Eith will remember.</p>
+
+      <hr class="modal-divider">
+
+      <button type="button" id="forgetAllBtn" class="danger-btn">Forget everything</button>
+      <p class="field-hint">Permanently erases everything Eith knows about you, on every device.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
