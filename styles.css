@@ -159,6 +159,18 @@ body {
 .bubble.thinking { color: var(--text-dim); font-style: italic; }
 .bubble.error-bubble { border-color: var(--danger); color: var(--danger); }
 
+.bubble-image {
+  display: block;
+  max-width: 100%;
+  width: 280px;
+  border-radius: 10px;
+}
+
+.bubble-caption {
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
 .bubble-time {
   font-size: 0.7rem;
   color: var(--text-dim);

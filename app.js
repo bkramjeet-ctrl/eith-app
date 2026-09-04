@@ -247,18 +247,39 @@ function renderMessages(messages) {
     return;
   }
   for (const msg of messages) {
-    chatLog.appendChild(buildBubble(msg.role, msg.text, msg.ts));
+    chatLog.appendChild(buildBubble(msg.role, msg.text, msg.ts, undefined, msg.imageUrl));
   }
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-function buildBubble(role, text, ts, extraClass) {
+function buildBubble(role, text, ts, extraClass, imageUrl) {
   const row = document.createElement("div");
   row.className = "bubble-row " + (role === "user" ? "user" : "eith");
 
   const bubble = document.createElement("div");
   bubble.className = "bubble" + (extraClass ? " " + extraClass : "");
-  bubble.textContent = text;
+
+  if (imageUrl) {
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = text || "Generated image";
+    img.className = "bubble-image";
+    img.loading = "lazy";
+    img.addEventListener("error", () => {
+      img.remove();
+      bubble.prepend(document.createTextNode("⚠️ Image couldn't load — the free image service may be busy right now. Try again in a bit."));
+    }, { once: true });
+    bubble.appendChild(img);
+    if (text) {
+      const caption = document.createElement("div");
+      caption.className = "bubble-caption";
+      caption.textContent = text;
+      bubble.appendChild(caption);
+    }
+  } else {
+    bubble.textContent = text;
+  }
+
   row.appendChild(bubble);
 
   if (ts) {
@@ -349,17 +370,32 @@ ${who}
 Here is what you currently know about the user:
 ${factsBlock}
 
-As you talk, when you learn a new, durable, important fact about the user — their name, preferences, relationships, goals, recurring context, important life details — include it wrapped in <remember></remember> tags at the very end of your reply, after your normal visible response. You can include zero, one, or several tags, one fact each, written in the third person and concise (e.g. <remember>Works as a nurse in Toronto</remember>). Do not remember small talk, one-off statements, or anything you're not confident is durable. These tags are stripped before the user ever sees them — never mention or reference them in your visible reply.`;
+As you talk, when you learn a new, durable, important fact about the user — their name, preferences, relationships, goals, recurring context, important life details — include it wrapped in <remember></remember> tags at the very end of your reply, after your normal visible response. You can include zero, one, or several tags, one fact each, written in the third person and concise (e.g. <remember>Works as a nurse in Toronto</remember>). Do not remember small talk, one-off statements, or anything you're not confident is durable. These tags are stripped before the user ever sees them — never mention or reference them in your visible reply.
+
+You can also generate images. When the user clearly wants one made (not just describing something in words), write a vivid, specific image-generation prompt wrapped in <generate_image></generate_image> tags at the end of your reply — at most one per reply, only when actually generating. Never generate an image of a real, identifiable person — not the user, not a named individual, not a celebrity or public figure, and not a description specific enough to clearly depict one. If asked for that, say plainly that you don't create images of real people, and offer a fictional, stylized, or symbolic alternative instead if one would fit what they wanted. Keep every image appropriate for all audiences — no realistic violence, nudity, or hateful content. Like <remember> tags, <generate_image> tags are stripped before the user sees them — never mention the tag itself.`;
 }
 
-function extractMemory(rawText) {
+function extractDirectives(rawText) {
   const facts = [];
-  const cleaned = rawText.replace(/<remember>([\s\S]*?)<\/remember>/gi, (_, fact) => {
-    const trimmed = fact.trim();
-    if (trimmed) facts.push(trimmed);
-    return "";
-  }).trim();
-  return { text: cleaned, facts };
+  let imagePrompt = null;
+  const cleaned = rawText
+    .replace(/<remember>([\s\S]*?)<\/remember>/gi, (_, fact) => {
+      const trimmed = fact.trim();
+      if (trimmed) facts.push(trimmed);
+      return "";
+    })
+    .replace(/<generate_image>([\s\S]*?)<\/generate_image>/gi, (_, prompt) => {
+      const trimmed = prompt.trim();
+      if (trimmed && !imagePrompt) imagePrompt = trimmed; // only the first, matching "at most one" in the prompt
+      return "";
+    })
+    .trim();
+  return { text: cleaned, facts, imagePrompt };
+}
+
+function buildImageUrl(prompt) {
+  const seed = Math.floor(Math.random() * 1_000_000_000); // avoid Pollinations caching the same image for a repeated-looking prompt
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&seed=${seed}&nologo=true`;
 }
 
 async function callGemini(history, facts, userName) {
@@ -638,9 +674,12 @@ composerForm.addEventListener("submit", async (e) => {
 
     const historyForCall = [...latestMessages, userMsg];
     const replyRaw = await callGemini(historyForCall, latestMemory, getUserName());
-    const { text: replyText, facts } = extractMemory(replyRaw);
+    const { text: replyText, facts, imagePrompt } = extractDirectives(replyRaw);
 
-    await dbPush(conversationMessagesRef(targetConvId), { role: "eith", text: replyText || "…", ts: Date.now() });
+    const eithMsg = { role: "eith", ts: Date.now(), text: imagePrompt ? replyText : (replyText || "…") };
+    if (imagePrompt) eithMsg.imageUrl = buildImageUrl(imagePrompt);
+
+    await dbPush(conversationMessagesRef(targetConvId), eithMsg);
     touchConversationMeta(targetConvId, { updatedAt: Date.now() });
 
     for (const fact of facts) {
