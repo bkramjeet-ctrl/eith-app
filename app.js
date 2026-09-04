@@ -41,6 +41,14 @@ const newConversationBtn = document.getElementById("newConversationBtn");
 const conversationList = document.getElementById("conversationList");
 const conversationsEmptyState = document.getElementById("conversationsEmptyState");
 
+const authScreen = document.getElementById("authScreen");
+const signInBtn = document.getElementById("signInBtn");
+const authError = document.getElementById("authError");
+const signOutBtn = document.getElementById("signOutBtn");
+const accountAvatar = document.getElementById("accountAvatar");
+const accountName = document.getElementById("accountName");
+const accountEmail = document.getElementById("accountEmail");
+
 // ---------- Local settings ----------
 function getApiKey() {
   return (localStorage.getItem(API_KEY_STORAGE) || "").trim();
@@ -429,22 +437,26 @@ async function callGemini(history, facts, userName) {
 }
 
 // ---------- Firebase ----------
-// Data layout: eith/conversations/{id}/meta {title, createdAt, updatedAt}
-//              eith/conversations/{id}/messages/{msgId} {role, text, ts}
-//              eith/memory/{factId} {text, addedAt}
+// Data layout (per signed-in user, isolated by their Google account uid):
+//   eith/users/{uid}/conversations/{id}/meta {title, createdAt, updatedAt}
+//   eith/users/{uid}/conversations/{id}/messages/{msgId} {role, text, ts}
+//   eith/users/{uid}/memory/{factId} {text, addedAt}
 let db, dbRef, dbSet, dbPush, dbRemove, dbUpdate, dbGet, dbOnValue, dbQuery, dbLimitToLast;
+let currentUid = null;
 let conversationsRef, memoryRef;
 let conversations = [];
 let activeConversationId = null;
 let latestMessages = [];
 let latestMemory = [];
 let unsubscribeMessages = null;
+let unsubscribeConversations = null;
+let unsubscribeMemory = null;
 
 function conversationMessagesRef(id) {
-  return dbRef(db, `eith/conversations/${id}/messages`);
+  return dbRef(db, `eith/users/${currentUid}/conversations/${id}/messages`);
 }
 function conversationMetaRef(id) {
-  return dbRef(db, `eith/conversations/${id}/meta`);
+  return dbRef(db, `eith/users/${currentUid}/conversations/${id}/meta`);
 }
 
 // Fire-and-forget writes that update conversation metadata: never let a
@@ -492,9 +504,9 @@ function switchConversation(id) {
 async function deleteConversation(id) {
   if (!confirm("Delete this conversation on every device? This can't be undone.")) return;
   try {
-    await dbRemove(dbRef(db, `eith/conversations/${id}`));
+    await dbRemove(dbRef(db, `eith/users/${currentUid}/conversations/${id}`));
     // If we just deleted the active conversation, the onValue listener on
-    // eith/conversations will fire next and ensureActiveConversation() picks
+    // conversationsRef will fire next and ensureActiveConversation() picks
     // (or creates) a replacement — nothing else to do here.
   } catch (err) {
     console.error(err);
@@ -509,11 +521,13 @@ closeConversationsModal.addEventListener("click", closeConversations);
 conversationsModal.addEventListener("click", (e) => { if (e.target === conversationsModal) closeConversations(); });
 
 if (isFirebaseConfigured) {
-  const [{ initializeApp }, dbModule] = await Promise.all([
+  const [{ initializeApp }, dbModule, authModule] = await Promise.all([
     import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
     import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js"),
+    import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
   ]);
   const { getDatabase, ref, push, set, remove, update, get, onValue, query, limitToLast } = dbModule;
+  const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } = authModule;
 
   const app = initializeApp(firebaseConfig);
   db = getDatabase(app);
@@ -527,13 +541,47 @@ if (isFirebaseConfigured) {
   dbQuery = query;
   dbLimitToLast = limitToLast;
 
-  conversationsRef = ref(db, "eith/conversations");
-  memoryRef = ref(db, "eith/memory");
+  const auth = getAuth(app);
 
-  newConversationBtn.addEventListener("click", async () => {
-    const id = await createConversation();
-    switchConversation(id);
+  signInBtn.addEventListener("click", async () => {
+    authError.hidden = true;
+    signInBtn.disabled = true;
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (err) {
+      console.error("Sign-in error:", err);
+      authError.textContent = "Couldn't sign in (" + (err?.message || err) + "). Try again.";
+      authError.hidden = false;
+    } finally {
+      signInBtn.disabled = false;
+    }
   });
+
+  signOutBtn.addEventListener("click", () => {
+    signOut(auth).catch((err) => console.error("Sign-out error:", err));
+  });
+
+  // One-time claim: the very first person to sign in on a freshly-upgraded
+  // Eith inherits whatever pre-accounts chat/memory already existed, so
+  // nobody's history vanishes when this feature is added. Guarded by
+  // eith/migratedTo so a second person signing in later doesn't also
+  // receive someone else's old conversations.
+  async function migrateLegacyDataIfNeeded(uid) {
+    const claimedSnap = await dbGet(ref(db, "eith/migratedTo")).catch(() => null);
+    if (claimedSnap?.exists()) return;
+
+    const [legacyConvSnap, legacyMemSnap] = await Promise.all([
+      dbGet(ref(db, "eith/conversations")).catch(() => null),
+      dbGet(ref(db, "eith/memory")).catch(() => null),
+    ]);
+    const legacyConversations = legacyConvSnap?.val();
+    const legacyMemory = legacyMemSnap?.val();
+    if (!legacyConversations && !legacyMemory) return;
+
+    if (legacyConversations) await dbSet(ref(db, `eith/users/${uid}/conversations`), legacyConversations);
+    if (legacyMemory) await dbSet(ref(db, `eith/users/${uid}/memory`), legacyMemory);
+    await dbSet(ref(db, "eith/migratedTo"), uid);
+  }
 
   async function ensureActiveConversation() {
     const storedId = getStoredActiveConversationId();
@@ -550,55 +598,100 @@ if (isFirebaseConfigured) {
       renderConversationBar();
       return;
     }
-    // No conversations exist yet — bring forward any pre-conversations chat
-    // history (from before this feature existed) as a starting conversation.
-    const legacySnap = await dbGet(ref(db, "eith/messages")).catch(() => null);
-    const legacyMessages = legacySnap?.val();
-    if (legacyMessages && Object.keys(legacyMessages).length > 0) {
-      const id = await createConversation("General");
-      for (const m of Object.values(legacyMessages)) {
-        await dbPush(conversationMessagesRef(id), m);
-      }
-      activeConversationId = id;
-    } else {
-      activeConversationId = await createConversation();
-    }
+    activeConversationId = await createConversation();
     setStoredActiveConversationId(activeConversationId);
     subscribeToConversationMessages(activeConversationId);
     renderConversationBar();
   }
 
-  let didInitConversation = false;
-  onValue(conversationsRef, (snapshot) => {
-    const data = snapshot.val() || {};
-    conversations = Object.entries(data)
-      .map(([id, v]) => ({ id, ...(v.meta || {}) }))
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  function teardownUserData() {
+    unsubscribeMessages?.(); unsubscribeMessages = null;
+    unsubscribeConversations?.(); unsubscribeConversations = null;
+    unsubscribeMemory?.(); unsubscribeMemory = null;
+    conversations = [];
+    activeConversationId = null;
+    latestMessages = [];
+    latestMemory = [];
+    renderMessages([]);
     renderConversationsList();
     renderConversationBar();
+    renderMemory([]);
+  }
 
-    if (!didInitConversation) {
-      didInitConversation = true;
-      // ensureActiveConversation() can involve several awaited writes (migration,
-      // creating a fresh conversation), each of which re-fires this very listener
-      // before activeConversationId is actually set — so the "active" highlight
-      // and bar title render stale mid-flight. Force one more render once it settles.
-      ensureActiveConversation().then(() => {
-        renderConversationsList();
-        renderConversationBar();
-      });
+  function initUserData(uid) {
+    conversationsRef = ref(db, `eith/users/${uid}/conversations`);
+    memoryRef = ref(db, `eith/users/${uid}/memory`);
+
+    let didInitConversation = false;
+    unsubscribeConversations = onValue(conversationsRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      conversations = Object.entries(data)
+        .map(([id, v]) => ({ id, ...(v.meta || {}) }))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      renderConversationsList();
+      renderConversationBar();
+
+      if (!didInitConversation) {
+        didInitConversation = true;
+        // ensureActiveConversation() can involve awaited writes (creating a
+        // fresh conversation), which re-fires this very listener before
+        // activeConversationId is actually set — so the "active" highlight
+        // and bar title render stale mid-flight. Force one more render once it settles.
+        ensureActiveConversation().then(() => {
+          renderConversationsList();
+          renderConversationBar();
+        });
+      }
+    });
+
+    unsubscribeMemory = onValue(memoryRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      latestMemory = Object.entries(data)
+        .map(([id, v]) => ({ id, ...v }))
+        .sort((a, b) => a.addedAt - b.addedAt);
+      renderMemory(latestMemory);
+    });
+  }
+
+  newConversationBtn.addEventListener("click", async () => {
+    const id = await createConversation();
+    switchConversation(id);
+  });
+
+  onAuthStateChanged(auth, async (user) => {
+    teardownUserData();
+
+    if (!user) {
+      currentUid = null;
+      authScreen.hidden = false;
+      return;
     }
-  });
 
-  onValue(memoryRef, (snapshot) => {
-    const data = snapshot.val() || {};
-    latestMemory = Object.entries(data)
-      .map(([id, v]) => ({ id, ...v }))
-      .sort((a, b) => a.addedAt - b.addedAt);
-    renderMemory(latestMemory);
-  });
+    currentUid = user.uid;
+    authScreen.hidden = true;
+    accountName.textContent = user.displayName || user.email || "Signed in";
+    accountEmail.textContent = user.email || "";
+    if (user.photoURL) {
+      accountAvatar.src = user.photoURL;
+      accountAvatar.hidden = false;
+    } else {
+      accountAvatar.hidden = true;
+    }
+    // Give Eith a head start on the name if the user hasn't set one manually.
+    if (!getUserName() && user.displayName) {
+      localStorage.setItem(NAME_STORAGE, user.displayName.split(" ")[0]);
+      userNameInput.value = getUserName();
+    }
 
+    try {
+      await migrateLegacyDataIfNeeded(user.uid);
+    } catch (err) {
+      console.error("Legacy data migration failed (non-fatal):", err);
+    }
+    initUserData(user.uid);
+  });
 } else {
+  authScreen.hidden = true;
   renderMessages([]);
   const notice = document.createElement("p");
   notice.className = "chat-empty-state";

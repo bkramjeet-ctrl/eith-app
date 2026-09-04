@@ -26,6 +26,71 @@ body {
   flex-direction: column;
 }
 
+/* ---------- Sign-in screen ---------- */
+.auth-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.auth-screen[hidden] { display: none; }
+
+.auth-card {
+  max-width: 360px;
+  text-align: center;
+}
+
+.auth-icon { font-size: 2.8rem; }
+
+.auth-card h1 { margin: 8px 0 4px; }
+
+.auth-card p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin: 0 0 22px;
+}
+
+.auth-signin-btn {
+  padding: 11px 22px;
+  font-size: 1rem;
+}
+
+/* ---------- Account (Settings) ---------- */
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.account-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.account-info { min-width: 0; }
+
+.account-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-email {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- Header ---------- */
 .site-header {
   border-bottom: 1px solid var(--border);

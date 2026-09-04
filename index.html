@@ -10,6 +10,17 @@
 </head>
 <body>
 
+<!-- Sign-in gate — shown until a Google account is authenticated -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-icon">✨</div>
+    <h1>Eith</h1>
+    <p>Your personal AI companion. Sign in so your conversations and memory stay private to your own account.</p>
+    <button type="button" id="signInBtn" class="primary-btn auth-signin-btn">Sign in with Google</button>
+    <p id="authError" class="field-status warn" hidden></p>
+  </div>
+</div>
+
 <header class="site-header">
   <div class="header-inner">
     <div class="brand">
@@ -52,6 +63,17 @@
     </div>
 
     <div class="modal-body">
+      <div class="account-row">
+        <img id="accountAvatar" class="account-avatar" alt="" hidden>
+        <div class="account-info">
+          <div id="accountName" class="account-name"></div>
+          <div id="accountEmail" class="account-email"></div>
+        </div>
+      </div>
+      <button type="button" id="signOutBtn" class="danger-btn">Sign out</button>
+
+      <hr class="modal-divider">
+
       <p class="modal-hint">
         Eith is powered by Google's Gemini API (free tier). You don't need to add anything here —
         by default, requests go through this site's own server, which uses the owner's key
